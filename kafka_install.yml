@@ -19,6 +19,16 @@
          name: epel-release
          state: present
 
+     - name: отключение SELinux
+       selinux:
+         state: disabled
+
+     - name: остановка и отключение firewalld
+       systemd:
+         name: firewalld
+         state: stopped
+         enabled: no
+
      - name: Добавление записей в /etc/hosts
        ansible.builtin.blockinfile:
          path: /etc/hosts
