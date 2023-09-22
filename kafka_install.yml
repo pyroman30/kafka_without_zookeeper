@@ -1,0 +1,160 @@
+---
+ - name: install kafka
+   hosts: 
+     - kafka
+   gather_facts: no
+   ignore_errors: yes
+   become: true
+
+   tasks:
+
+     - name: update package
+       dnf:
+         name: '*'
+         state: latest
+
+
+     - name: install epel-release
+       yum:
+         name: epel-release
+         state: present
+
+     - name: Добавление записей в /etc/hosts
+       ansible.builtin.blockinfile:
+         path: /etc/hosts
+         block: |
+           192.168.10.95 kafka-test-wo-zoo1
+           192.168.10.96 kafka-test-wo-zoo2
+           192.168.10.97 kafka-test-wo-zoo3
+         insertbefore: EOF
+
+     - name: Install Java
+       ansible.builtin.package:
+         name: java-11-openjdk-devel
+         state: present
+
+     - name: install wget
+       package:
+         name: "{{ item }}"
+         state: present
+       loop:
+         - wget
+         - unzip
+         - tar
+
+     - name: download kafka archive
+       get_url:
+         url: https://downloads.apache.org/kafka/3.4.1/kafka_2.13-3.4.1.tgz
+         dest: /tmp/kafka_2.13-3.4.1.tgz
+
+     - name: Extract kafka archive
+       ansible.builtin.unarchive:
+         src: /tmp/kafka_2.13-3.4.1.tgz
+         dest: /opt
+         remote_src: yes
+         creates: /opt/kafka_2.13-3.4.1
+
+     - name: create symbolic link kafka
+       ansible.builtin.file:
+         src: /opt/kafka_2.13-3.4.1
+         dest: /opt/kafka
+         state: link
+
+     - name: create group Kafka
+       group:
+         name: kafka
+         state: present
+
+     - name: create user kafka
+       user:
+         name: kafka
+         groups: [kafka]
+         state: present
+
+     - name: owner kafka
+       file:
+         path: /opt/kafka_2.13-3.4.1
+         owner: kafka
+         group: kafka
+         recurse: yes
+
+
+     - name: Удалить директорию на каждом сервере
+       file:
+         path: "/tmp/kafka-test-wo-zoo{{ inventory_hostname[-1] }}"
+         state: absent
+
+     - name: create cluste_id for Kafka
+       command: /opt/kafka_2.13-3.4.1/bin/kafka-storage.sh random-uuid
+       register: kafka_key_output
+       run_once: true
+
+     - name: view key
+       debug:
+         var: kafka_key_output.stdout
+       when: inventory_hostname == "kafka-test-wo-zoo1"
+
+
+     - name: replace node.id в server.properties
+       replace:
+         path: /opt/kafka/config/kraft/server.properties
+         regexp: "{{ item.regexp }}"
+         replace: "{{ item.replace }}"
+       with_items:
+         - { regexp: 'node.id=.*', replace: 'node.id=1' }
+         - { regexp: 'process.roles=.*', replace: 'process.roles=broker,controller' }
+         - { regexp: 'controller.quorum.voters=.*', replace: 'controller.quorum.voters=1@kafka-test-wo-zoo1:19092,2@kafka-test-wo-zoo2:19093,3@kafka-test-wo-zoo3:19094' }
+         - { regexp: 'log.dirs=.*', replace: 'log.dirs=/tmp/kafka-test-wo-zoo1/kraft-combined-logs' }
+       when: inventory_hostname == "kafka-test-wo-zoo1"
+
+     - name: Замена параметра listeners
+       ansible.builtin.lineinfile:
+         path: /opt/kafka/config/kraft/server.properties
+         regexp: 'listeners=.*'
+         line: 'listeners=PLAINTEXT://:9092,CONTROLLER://:19092'
+       when: inventory_hostname == "kafka-test-wo-zoo1"
+
+     - name: replace node.id в server.properties
+       replace:
+         path: /opt/kafka/config/kraft/server.properties
+         regexp: "{{ item.regexp }}"
+         replace: "{{ item.replace }}"
+       with_items:
+         - { regexp: 'node.id=.*', replace: 'node.id=2' }
+         - { regexp: 'process.roles=.*', replace: 'process.roles=broker,controller' }
+         - { regexp: 'controller.quorum.voters=.*', replace: 'controller.quorum.voters=1@kafka-test-wo-zoo1:19092,2@kafka-test-wo-zoo2:19093,3@kafka-test-wo-zoo3:19094' }
+         - { regexp: 'log.dirs=.*', replace: 'log.dirs=/tmp/kafka-test-wo-zoo2/kraft-combined-logs' }
+       when: inventory_hostname == "kafka-test-wo-zoo2"
+
+     - name: Замена параметра listeners
+       ansible.builtin.lineinfile:
+         path: /opt/kafka/config/kraft/server.properties
+         regexp: 'listeners=.*'
+         line: 'listeners=PLAINTEXT://:9093,CONTROLLER://:19093'
+       when: inventory_hostname == "kafka-test-wo-zoo2"
+
+     - name: replace node.id в server.properties
+       replace:
+         path: /opt/kafka/config/kraft/server.properties
+         regexp: "{{ item.regexp }}"
+         replace: "{{ item.replace }}"
+       with_items:
+         - { regexp: 'node.id=.*', replace: 'node.id=3' }
+         - { regexp: 'process.roles=.*', replace: 'process.roles=broker,controller' }
+         - { regexp: 'controller.quorum.voters=.*', replace: 'controller.quorum.voters=1@kafka-test-wo-zoo1:19092,2@kafka-test-wo-zoo2:19093,3@kafka-test-wo-zoo3:19094' }
+         - { regexp: 'log.dirs=.*', replace: 'log.dirs=/tmp/kafka-test-wo-zoo3/kraft-combined-logs' }
+       when: inventory_hostname == "kafka-test-wo-zoo3"
+
+     - name: Замена параметра listeners
+       ansible.builtin.lineinfile:
+         path: /opt/kafka/config/kraft/server.properties
+         regexp: 'listeners=.*'
+         line: 'listeners=PLAINTEXT://:9094,CONTROLLER://:19094'
+       when: inventory_hostname == "kafka-test-wo-zoo3"
+
+     - name: format Kafka Storage
+       command: /opt/kafka_2.13-3.4.1/bin/kafka-storage.sh format -t {{ kafka_key_output.stdout }} -c /opt/kafka_2.13-3.4.1/config/kraft/server.properties
+
+     - name: start Kafka Server
+       command: /opt/kafka_2.13-3.4.1/bin/kafka-server-start.sh -daemon /opt/kafka_2.13-3.4.1/config/kraft/server.properties
+

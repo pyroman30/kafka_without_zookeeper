@@ -1,0 +1,192 @@
+---
+ - name: install kafka
+   hosts: 
+     - kafka
+   gather_facts: no
+   ignore_errors: yes
+   become: true
+
+   tasks:
+
+     - name: update package
+       dnf:
+         name: '*'
+         state: latest
+
+
+     - name: install epel-release
+       yum:
+         name: epel-release
+         state: present
+
+
+     - name: Install Java
+       ansible.builtin.package:
+         name: java-11-openjdk-devel
+         state: present
+
+     - name: install wget
+       package:
+         name: "{{ item }}"
+         state: present
+       loop:
+         - wget
+         - unzip
+         - tar
+
+     - name: download kafka archive
+       get_url:
+         url: https://downloads.apache.org/kafka/3.4.1/kafka_2.13-3.4.1.tgz
+         dest: /tmp/kafka_2.13-3.4.1.tgz
+
+     - name: Extract kafka archive
+       ansible.builtin.unarchive:
+         src: /tmp/kafka_2.13-3.4.1.tgz
+         dest: /opt
+         remote_src: yes
+         creates: /opt/kafka_2.13-3.4.1
+
+     - name: create symbolic link kafka
+       ansible.builtin.file:
+         src: /opt/kafka_2.13-3.4.1
+         dest: /opt/kafka
+         state: link
+
+     - name: create group Kafka
+       group:
+         name: kafka
+         state: present
+
+     - name: create user kafka
+       user:
+         name: kafka
+         groups: [kafka]
+         state: present
+
+     - name: owner kafka
+       file:
+         path: /opt/kafka_2.13-3.4.1
+         owner: kafka
+         group: kafka
+         recurse: yes
+
+     - name: Create systemd unit file for Kafka
+       ansible.builtin.copy:
+         content: |
+           [Unit]
+           Description=Apache Kafka Server
+           Documentation=http://kafka.apache.org/documentation.html
+           Requires=zookeeper.service
+
+           [Service]
+           Type=simple
+           Environment="JAVA_HOME=/usr/lib/jvm/jre-11-openjdk"
+           ExecStart=/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties
+           ExecStop=/opt/kafka/bin/kafka-server-stop.sh
+
+           [Install]
+           WantedBy=multi-user.target
+         dest: /etc/systemd/system/kafka.service
+         owner: root
+         group: root
+         mode: '0644'
+
+
+     - name: create cluste_id for Kafka
+       command: /opt/kafka_2.13-3.4.1/bin/kafka-storage.sh random-uuid
+       register: kafka_key_output
+
+     - name: view key
+       debug:
+         var: kafka_key_output.stdout
+
+     - name: Reload systemd
+       ansible.builtin.systemd:
+         daemon_reload: yes
+
+     - name: setting env1
+       lineinfile:
+         path: ~/.bashrc
+         line: "{{ item }}"
+         create: yes
+       loop:
+         - 'export CURRENT_SERVER_INDEX=1'
+         - 'export CLUSTER_UUID=Qo0Ur6vjRoOsaVqbY7heUw'
+       when: inventory_hostname == "kafka-test-wo-zoo1"
+
+     - name: setting env2
+       lineinfile:
+         path: ~/.bashrc
+         line: "{{ item }}"
+         create: yes
+       loop:
+         - 'export CURRENT_SERVER_INDEX=2'
+         - 'export CLUSTER_UUID=ru0lw901SKStJMzxKCW8eA'
+       when: inventory_hostname == "kafka-test-wo-zoo2"
+
+     - name: setting env3
+       lineinfile:
+         path: ~/.bashrc
+         line: "{{ item }}"
+         create: yes
+       loop:
+         - 'export CURRENT_SERVER_INDEX=2'
+         - 'export CLUSTER_UUID=Tx-o6fTXT020kH54mYJkaQ'
+       when: inventory_hostname == "kafka-test-wo-zoo3"
+
+     - name: replace node.id в controller.properties
+       lineinfile:
+         path: /opt/kafka/config/kraft/controller.properties
+         regexp: '^node.id='
+         line: 'node.id=1'
+       when: inventory_hostname == "kafka-test-wo-zoo1"
+
+     - name: replace node.id в controller.properties
+       lineinfile:
+         path: /opt/kafka/config/kraft/controller.properties
+         regexp: '^node.id='
+         line: 'node.id=2'
+       when: inventory_hostname == "kafka-test-wo-zoo2"
+
+     - name: replace node.id в controller.properties
+       lineinfile:
+         path: /opt/kafka/config/kraft/controller.properties
+         regexp: '^node.id='
+         line: 'node.id=3'
+       when: inventory_hostname == "kafka-test-wo-zoo3"
+
+     - name: replace controller.quorum.voters в controller.properties
+       lineinfile:
+         path: /opt/kafka/config/kraft/controller.properties
+         regexp: '^controller.quorum.voters='
+         line: 'controller.quorum.voters=1@kafka-test-wo-zoo1:19092,2@kafka-test-wo-zoo2:19093,3@kafka-test-wo-zoo3:19094'
+
+
+
+
+
+     - name: create mkdir
+       file:
+         path: /opt/kafka/logs
+         state: directory
+
+     - name: replace log.dirs в controller.properties
+       lineinfile:
+         path: /opt/kafka/config/kraft/controller.properties
+         regexp: '^log.dirs='
+         line: 'log.dirs=/opt/kafka/logs'
+
+
+     - name: format Kafka Storage
+       command: /opt/kafka_2.13-3.4.1/bin/kafka-storage.sh format -t {{ kafka_key_output.stdout }} --config /opt/kafka_2.13-3.4.1/config/kraft/controller.properties
+
+
+
+     - name: start Kafka Server
+       command: /opt/kafka_2.13-3.4.1/bin/kafka-server-start.sh -daemon /opt/kafka_2.13-3.4.1/config/kraft/controller.properties
+
+#     - name: Enable and start Kafka service
+#       ansible.builtin.service:
+#         name: kafka
+#         enabled: yes
+#         state: started
