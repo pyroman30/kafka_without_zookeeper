@@ -1,0 +1,25 @@
+./zookeeper-shell.sh localhost:2181 get /cluster/id #получить cluster_id
+kafka-topics.sh --list --bootstrap-server localhost:9092 #список топиков
+kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic <topic-name> [--from-beginning] #прочитать сообщения из топика
+        [--from-beginning] #(необязательный): Если вы хотите начать чтение сообщений с начала топика, добавьте этот флаг.
+
+kafka-metadata-quorum.sh --bootstrap-server server4:9092 describe --status
+kafka-metadata-quorum.sh --bootstrap-server server4:9092 describe --replication
+
+
+
+1) Настройки partition key (позволяет упорядочить партиции в топике)
+2) max_pool_interval (равномерность распределения партиций по консюмерам)
+   session_timeout
+3) group instance_id (подождет пока instance консьюмер не поднимется)
+4) TTL у кафки по умолчанию 1 неделя. Данные которым больше 7-ми дней пропадут.
+
+Для настройки обычного брокера не учавствующего в голосовании:
+
+export CURRENT_SERVER_INDEX=4
+sed -i "s#node.id=.*#node.id=${CURRENT_SERVER_INDEX}#g" broker.properties
+sed -i "s#controller.quorum.voters=.*#controller.quorum.voters=1@server1:9093,2@server2:9093,3@server3:9093#g" broker.properties
+sed -i "s#listeners=.*#listeners=PLAINTEXT://server${CURRENT_SERVER_INDEX}:9092#g" broker.properties
+sed -i "s#log.dirs=.*#log.dirs=/data/kafka#g" broker.properties
+/opt/kafka_2.13-3.3.1/bin/kafka-storage.sh format -t jkUlhzQmQkic54LMxrB1oA -c /opt/kafka_2.13-3.3.1/config/kraft/broker.properties
+/opt/kafka_2.13-3.3.1/bin/kafka-server-start.sh -daemon /opt/kafka_2.13-3.3.1/config/kraft/broker.properties
