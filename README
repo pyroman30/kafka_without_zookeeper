@@ -1,3 +1,5 @@
+https://medium.com/@yuanji.zhai/change-data-capture-with-debezium-and-kafka-kraft-cluster-ff21373958ac
+
 kafka-topics.sh --list --bootstrap-server localhost:9092 #список топиков
 kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic <topic-name> [--from-beginning] #прочитать сообщения из топика
         [--from-beginning] #(необязательный): Если вы хотите начать чтение сообщений с начала топика, добавьте этот флаг.
